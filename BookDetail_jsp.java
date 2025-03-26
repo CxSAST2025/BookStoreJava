@@ -863,12 +863,14 @@ fldproduct_url="Review this book on Amazon.com";
 
     }
     catch (Exception e) { out.println(e.toString()); }
-  } 
+  }
 
 
   String RatingAction(javax.servlet.http.HttpServletRequest request, javax.servlet.http.HttpServletResponse response, javax.servlet.http.HttpSession session, javax.servlet.jsp.JspWriter out, String sAction, String sForm, java.sql.Connection conn, java.sql.Statement stat) throws java.io.IOException {
-  
+
     String sRatingErr ="";
+    PreparedStatement pstmt = null;
+
     try {
 
       if (sAction.equals("")) return "";
@@ -884,7 +886,7 @@ fldproduct_url="Review this book on Amazon.com";
       boolean bErr = false;
       long iCount = 0;
 
-  
+
       sParams = "?";
       sParams += "item_id=" + toURL(getParam( request, "Trn_item_id"));
       String pPKitem_id = "";
@@ -900,10 +902,11 @@ fldproduct_url="Review this book on Amazon.com";
 
       // Create WHERE statement
 
-      if ( iAction == iupdateAction || iAction == ideleteAction ) { 
+      if ( iAction == iupdateAction || iAction == ideleteAction ) {
         pPKitem_id = getParam( request, "PK_item_id");
         if ( isEmpty(pPKitem_id)) return sRatingErr;
-        sWhere = "item_id=" + toSQL(pPKitem_id, adNumber);
+        // Using parameter markers instead of direct string concatenation
+        sWhere = "item_id=?";
       }
 
 
@@ -914,7 +917,7 @@ fldproduct_url="Review this book on Amazon.com";
       String fldrating_count_view="";
 
       // Load all form fields into variables
-    
+
       fldrating = getParam(request, "rating");
       fldrating_count = getParam(request, "rating_count");
       // Validate fields
@@ -938,30 +941,44 @@ fldproduct_url="Review this book on Amazon.com";
       // Create SQL statement
 
       switch (iAction) {
-  
-      case iupdateAction:
-        
-sSQL = "update items set rating=rating+" + getParam(request, "rating") + ", rating_count=rating_count+1 where item_id=" + getParam(request, "item_id");
-        if ("".equals(sSQL)) {
-          sSQL = "update items set " +
-                "rating=" + toSQL(fldrating, adNumber) +
-                ",rating_count=" + toSQL(fldrating_count, adNumber);
-          sSQL = sSQL + " where " + sWhere;
-        }
-        break;
-      
+
+        case iupdateAction:
+          // Using PreparedStatement instead of string concatenation
+          sSQL = "update items set rating=rating+?, rating_count=rating_count+1 where item_id=?";
+
+          if ("".equals(sSQL)) {
+            sSQL = "update items set rating=?, rating_count=? where " + sWhere;
+          }
+          break;
+
       }
 
       if ( sRatingErr.length() > 0 ) return sRatingErr;
       try {
-        // Execute SQL statement
-        stat.executeUpdate(sSQL);
+        // Execute SQL statement using PreparedStatement instead of Statement
+        pstmt = conn.prepareStatement(sSQL);
+
+        if (sSQL.contains("rating=rating+?")) {
+          // Set parameters for the first query format
+          pstmt.setString(1, fldrating);
+          pstmt.setString(2, getParam(request, "item_id"));
+        } else {
+          // Set parameters for the second query format
+          pstmt.setString(1, fldrating);
+          pstmt.setString(2, fldrating_count);
+          if (iAction == iupdateAction || iAction == ideleteAction) {
+            pstmt.setString(3, pPKitem_id);
+          }
+        }
+
+        pstmt.executeUpdate();
       }
       catch(java.sql.SQLException e) {
         sRatingErr = e.toString(); return (sRatingErr);
       }
-  
+
       try {
+        if ( pstmt != null ) pstmt.close();
         if ( stat != null ) stat.close();
         if ( conn != null ) conn.close();
       }
